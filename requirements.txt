@@ -1,5 +1,3 @@
 python-docx
-openpyxl
 pytest
-pydantic       
-sqlalchemy  
+python 3.9

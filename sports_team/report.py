@@ -60,7 +60,7 @@ def save_team_report_docx(team: Team, filename: str):
 
     # --- Сохранение и открытие ---
     doc.save(filepath)
-    print(f"📄 Отчёт сохранён: {filepath}")
+    print(f"Отчёт сохранён: {filepath}")
     try:
         os.startfile(filepath)
     except Exception:
