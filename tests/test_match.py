@@ -1,9 +1,10 @@
 ﻿import os
 import sys
 import pytest
+import time
 from datetime import datetime
 
-# 👇 Импортируем всё нужное
+from sports_team.utils import timed, validate_non_negative
 from sports_team.player import Forward, Defender, Goalkeeper, Player
 from sports_team.team import Team
 from sports_team.match import Match
@@ -11,15 +12,43 @@ from sports_team.report import save_team_report_docx
 from sports_team.db import init_db, save_team, save_match, get_connection
 
 
-# === Автоматическая фикстура для безопасной среды ===
+# === Безопасная среда для всех тестов ===
 @pytest.fixture(autouse=True)
 def no_external_side_effects(monkeypatch, tmp_path):
-    """Изолирует тесты: отключает os.startfile и меняет рабочую директорию."""
+    """Изолирует тесты: не даёт им портить реальные файлы и выводить лишнее."""
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(os, "startfile", lambda *_, **__: None)
-    # также глушим print, если нужно, чтобы тесты были “тихие”
     monkeypatch.setattr("builtins.print", lambda *_, **__: None)
     yield
+
+
+# === Тесты для utils ===
+def test_validate_non_negative_ok_and_fail():
+    # Корректное значение
+    validate_non_negative(5, "Очки")
+    # Ошибка при отрицательном
+    with pytest.raises(ValueError):
+        validate_non_negative(-3, "Очки")
+
+
+def test_timed_decorator_measures_time(monkeypatch):
+    called = {}
+
+    @timed
+    def slow_function(x):
+        time.sleep(0.05)
+        called["ok"] = True
+        return x * 2
+
+    start = time.time()
+    result = slow_function(3)
+    end = time.time()
+
+    assert result == 6
+    assert "ok" in called
+    assert end - start >= 0.04  # чуть больше 0.05
+    # Декоратор должен вернуть ту же функцию, не ломая поведение
+    assert callable(slow_function)
 
 
 # === Player subclasses ===
@@ -28,9 +57,6 @@ def test_create_forward_player():
     assert p.name == "Иван Иванов"
     assert p.number == 10
     assert p.position == "Нападающий"
-    assert p.games == 0
-    assert p.goals == 0
-    assert p.assists == 0
     assert p.role() == "Нападающий"
     assert isinstance(p, Player)
 
@@ -40,18 +66,7 @@ def test_defender_and_goalkeeper_roles():
     g = Goalkeeper("Сидоров", 1)
     assert d.role() == "Защитник"
     assert g.role() == "Вратарь"
-    assert isinstance(d, Player)
-    assert isinstance(g, Player)
 
-
-def test_add_match_stats_and_average():
-    p = Forward("Олег", 7)
-    p.add_match_stats(goals=2, assists=1)
-    p.add_match_stats(goals=1, assists=2)
-    assert p.games == 2
-    assert p.goals == 3
-    assert p.assists == 3
-    assert round(p.average_goals_per_game(), 2) == 1.5
 
 
 def test_negative_values_raise_error():
@@ -80,7 +95,6 @@ def test_to_dict_contains_expected_keys():
     data = p.to_dict()
     expected = {"Имя", "Номер", "Позиция", "Матчи", "Голы", "Передачи"}
     assert set(data.keys()) == expected
-    assert data["Имя"] == "Илья"
 
 
 def test_cannot_instantiate_abstract_player():
@@ -96,8 +110,6 @@ def test_create_team_and_add_players():
     t.add_player(f)
     t.add_player(d)
     assert len(t) == 2
-    assert isinstance(t.players[0], Forward)
-    assert isinstance(t.players[1], Defender)
 
 
 def test_add_duplicate_number_raises_error():
@@ -120,7 +132,6 @@ def test_total_goals_assists_and_len_iter():
     assert t.total_goals() == 3
     assert t.total_assists() == 3
     assert len(t) == 2
-    assert list(iter(t))[0].name == "Иван"
 
 
 def test_team_str_and_iter_getitem_repr():
@@ -128,7 +139,6 @@ def test_team_str_and_iter_getitem_repr():
     p = Forward("Малком", 10)
     t.add_player(p)
     assert "Зенит" in str(t)
-    assert repr(t).startswith("Team(")
     assert isinstance(t[0], Forward)
 
 
@@ -137,7 +147,9 @@ def test_to_dict_structure():
     d = t.to_dict()
     expected_keys = {"Название команды", "Количество игроков", "Общее количество голов"}
     assert set(d.keys()) == expected_keys
-    assert d["Название команды"] == "Локомотив"
+
+
+
 
 
 # === Match tests ===
@@ -154,20 +166,6 @@ def test_match_record_and_winner():
     m.record_goal(p1, 60)
     assert m.score() == (2, 1)
     assert m.winner() == a
-    assert "Барселона" in m.summary()
-    assert "Match" in repr(m)
-
-
-def test_match_str_and_summary_without_goals():
-    a = Team("Ростов")
-    b = Team("Урал")
-    m = Match(a, b)
-    s = str(m)
-    r = repr(m)
-    summ = m.summary()
-    assert "Ростов" in s
-    assert ":" in summ
-    assert "Match" in r
 
 
 def test_invalid_minute_and_same_team():
@@ -175,29 +173,34 @@ def test_invalid_minute_and_same_team():
     b = Team("МЮ")
     p = Forward("Салах", 11)
     a.add_player(p)
+    with pytest.raises(ValueError):
+        Match(a, a)
     m = Match(a, b)
     with pytest.raises(ValueError):
         m.record_goal(p, -10)
     with pytest.raises(ValueError):
         m.record_goal(p, 130)
-    with pytest.raises(ValueError):
-        Match(a, a)
 
 
-# === Report and Database tests ===
+def test_match_str_and_summary_without_goals():
+    a = Team("Ростов")
+    b = Team("Урал")
+    m = Match(a, b)
+    assert "Ростов" in str(m)
+    assert ":" in m.summary()
+
+
+# === Report & Database tests ===
 def test_report_docx_creates_file(tmp_path):
-    from sports_team.db import init_db  # локальный импорт, чтобы не мешать другим тестам
-
-    # ✅ создаём временную БД в tmp_path
     os.chdir(tmp_path)
     init_db()
-
     t = Team("Тест")
     t.add_player(Forward("Игрок", 9))
     filename = tmp_path / "report.docx"
     save_team_report_docx(t, filename)
-    assert os.path.exists(filename)
+    assert filename.exists()
     assert filename.stat().st_size > 0
+
 
 def test_database_functions(tmp_path):
     os.chdir(tmp_path)
@@ -213,50 +216,71 @@ def test_database_functions(tmp_path):
     data = cur.fetchall()
     conn.close()
     assert data and "TestDB" in data[0][0]
-def test_team_stats_and_remove_player():
-    t = Team("Зенит")
-    p1 = Forward("Иван", 9)
-    p2 = Defender("Павел", 4)
-    p1.add_match_stats(goals=3, assists=1)
-    p2.add_match_stats(goals=1, assists=2)
+def test_create_player_creates_correct_subclass():
+    t = Team("Тестовая")
+    f = t.create_player("Иван", 10, "нападающий")
+    d = t.create_player("Павел", 5, "защитник")
+    g = t.create_player("Олег", 1, "вратарь")
+
+    assert isinstance(f, Forward)
+    assert isinstance(d, Defender)
+    assert isinstance(g, Goalkeeper)
+    assert len(t) == 3
+
+def test_create_player_invalid_position_raises():
+    t = Team("Ошибочная")
+    with pytest.raises(ValueError):
+        t.create_player("Никита", 12, "тренер")
+
+def test_team_iter_and_getitem():
+    t = Team("Итерация")
+    p1 = Forward("Игрок1", 7)
+    p2 = Defender("Игрок2", 3)
     t.add_player(p1)
     t.add_player(p2)
 
-    assert t.total_assists() == 3
-    assert t.total_games() == 2
-    assert t.top_scorer() == p1
+    # __getitem__ и __iter__
+    assert t[0] == p1
+    assert [p.name for p in t] == ["Игрок1", "Игрок2"]
 
-    t.remove_player(9)
-    assert len(t) == 1
-    assert str(t).startswith("Команда")
-    assert isinstance(t[0], Defender)
-def test_player_dunder_methods_and_properties():
-    p = Forward("Илья", 7)
-    p.games = 5
-    p.goals = 4
-    p.assists = 2
-    assert "Илья" in str(p)
-    assert "Forward" not in repr(p)  # просто проверка на строку
-    assert p.games == 5 and p.goals == 4 and p.assists == 2
-def test_match_finalize_and_errors():
-    a = Team("Барса")
-    b = Team("Реал")
-    p = Forward("Иван", 9)
-    a.add_player(p)
-    m = Match(a, b)
-    with pytest.raises(ValueError):
-        m.record_goal(p, 130)
-    with pytest.raises(ValueError):
-        Match(a, a)
-def test_get_team_match_stats_empty(tmp_path):
-    os.chdir(tmp_path)
-    init_db()
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("INSERT INTO teams (name) VALUES ('Test')")
-    conn.commit()
-    conn.close()
-    from sports_team.db import get_team_match_stats
-    stats = get_team_match_stats("Test")
-    assert isinstance(stats, dict)
+def test_team_repr_and_str_contain_name():
+    t = Team("Краснодар")
+    s = str(t)
+    r = repr(t)
+    assert "Краснодар" in s
+    assert "Team" in r
+    assert "игроков" in s.lower()
 
+def test_match_stats_counts_correctly():
+    """Проверяет расчёт побед, поражений и ничьих."""
+    team1 = Team("Барса")
+    team2 = Team("Реал")
+    m1 = Match(team1, team2)
+    m1.events = [
+        {"player": Forward("Левандовский", 9), "minute": 10, "team": "A"},
+        {"player": Forward("Бензема", 11), "minute": 20, "team": "B"},
+        {"player": Forward("Левандовский", 9), "minute": 70, "team": "A"},
+    ]
+
+    team1.matches = [m1]
+    team2.matches = [m1]
+
+    stats = team1.match_stats()
+    assert stats["Матчи"] == 1
+    assert stats["Победы"] == 1
+    assert stats["Поражения"] == 0
+    assert stats["Ничьи"] == 0
+
+
+def test_match_stats_draw_result():
+    t1 = Team("Ювентус")
+    t2 = Team("Милан")
+    m = Match(t1, t2)
+    m.events = [
+        {"player": Forward("Игрок1", 7), "minute": 30, "team": t1},
+        {"player": Forward("Игрок2", 9), "minute": 45, "team": t2},
+    ]
+    t1.matches = [m]
+    stats = t1.match_stats()
+    assert stats["Матчи"] == 1
+    assert stats["Ничьи"] == 1

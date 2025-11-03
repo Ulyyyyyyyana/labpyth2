@@ -1,6 +1,9 @@
 ﻿import sys
 import os
 import pickle
+import subprocess
+import platform
+
 from sports_team.player import Forward, Defender, Goalkeeper
 from sports_team.team import Team
 from sports_team.match import Match
@@ -8,10 +11,12 @@ from sports_team.report import save_team_report_docx
 from sports_team.db import init_db, save_team, save_match
 
 SAVE_FILE = "teams.pkl"
-
 teams = {}
 
+# === Инициализация базы ===
 init_db()
+
+
 # === Сохранение и загрузка состояния ===
 def save_state():
     try:
@@ -29,8 +34,6 @@ def load_state():
                 loaded = pickle.load(f)
                 if isinstance(loaded, dict):
                     teams.update(loaded)
-                else:
-                    teams = {}
         except Exception:
             teams = {}
     else:
@@ -39,9 +42,10 @@ def load_state():
 
 # === Работа с командами ===
 def create_team():
+    """Создание новой команды."""
     name = input("Введите название команды: ").strip()
     if not name:
-        print("Название не может быть пустым.")
+        print("Название команды не может быть пустым.")
         return
 
     key = name.lower()
@@ -55,23 +59,24 @@ def create_team():
 
 
 def add_player_to_team():
+    """Добавление игрока в команду."""
     if not teams:
-        print("Нет созданных команд. Сначала создайте команду.")
+        print("Нет созданных команд. Сначала создайте хотя бы одну команду.")
         return
 
-    name = input("Введите название команды: ").strip()
-    if not name:
+    team_name = input("Введите название команды: ").strip()
+    if not team_name:
         print("Название команды не может быть пустым.")
         return
 
-    team = teams.get(name.lower())
+    team = teams.get(team_name.lower())
     if team is None:
-        print(f"Команда '{name}' не найдена.")
+        print(f"Команда '{team_name}' не найдена.")
         return
 
     player_name = input("Имя игрока: ").strip()
     if not player_name:
-        print("Имя не может быть пустым.")
+        print("Имя игрока не может быть пустым.")
         return
 
     try:
@@ -80,7 +85,7 @@ def add_player_to_team():
             print("Номер должен быть положительным числом.")
             return
     except ValueError:
-        print("Неверный номер. Введите целое число.")
+        print("Введите корректный номер.")
         return
 
     position = input("Позиция (Нападающий / Защитник / Вратарь): ").strip().lower()
@@ -96,28 +101,29 @@ def add_player_to_team():
 
     # === Создаём игрока нужного подкласса ===
     if "напад" in position:
-        player = Forward(player_name, number, "Нападающий")
+        player = Forward(player_name, number)
     elif "защит" in position:
-        player = Defender(player_name, number, "Защитник")
+        player = Defender(player_name, number)
     elif "врат" in position:
-        player = Goalkeeper(player_name, number, "Вратарь")
+        player = Goalkeeper(player_name, number)
     else:
         print("Неизвестная позиция. Используйте: Нападающий, Защитник или Вратарь.")
         return
 
     team.add_player(player)
     save_state()
-    print(f"Игрок {player_name} ({player.role()}) добавлен в команду {team.name}.")
+    print(f"✅ Игрок {player_name} ({player.role()}) добавлен в команду {team.name}.")
 
 
 def show_team_info():
+    """Вывод информации о команде."""
     if not teams:
-        print("Нет созданных команд.")
+        print("Нет созданных команд. Сначала создайте хотя бы одну команду.")
         return
 
     name = input("Введите название команды: ").strip()
     if not name:
-        print("Название команды не может быть пустым.")
+        print("Название не может быть пустым.")
         return
 
     team = teams.get(name.lower())
@@ -126,23 +132,23 @@ def show_team_info():
         return
 
     print(f"\n=== {team.name} ===")
-    print(f"Количество игроков: {len(team)}")
-    print(f"Общие голы: {team.total_goals()}")
-    print(f"Общие передачи: {team.total_assists()}")
-    avg_games = team.total_games() / len(team) if len(team) > 0 else 0
-    print(f"Средние матчи на игрока: {avg_games:.2f}\n")
+    print(f"Игроков: {len(team)}")
+    print(f"Голы: {team.total_goals()} | Передачи: {team.total_assists()} | Матчей: {team.total_games()}")
+    print(f"Лучший бомбардир: {team.top_scorer().name if team.top_scorer() else '—'}")
 
-    if team.players:
-        print("Состав команды:")
-        for p in team.players:
-            print(f" - {p.name} (№{p.number}, {p.role()}) — "
-                  f"Голы: {p.goals}, Передачи: {p.assists}, Матчи: {p.games}")
-    else:
+    if not team.players:
         print("В команде нет игроков.")
+        return
+
+    print("\nСостав:")
+    for p in team.players:
+        print(f" - {p.name} (№{p.number}, {p.role()}) — "
+              f"Голы: {p.goals}, Передачи: {p.assists}, Матчи: {p.games}")
     print()
 
 
 def list_all_teams():
+    """Список всех команд."""
     if not teams:
         print("Нет команд.")
         return
@@ -155,6 +161,7 @@ def list_all_teams():
 
 # === Матчи ===
 def record_match():
+    """Проведение матча между двумя командами."""
     if len(teams) < 2:
         print("Для проведения матча нужно как минимум две команды.")
         return
@@ -165,20 +172,19 @@ def record_match():
     team_a = teams.get(team_a_name.lower())
     team_b = teams.get(team_b_name.lower())
 
-    if team_a is None or team_b is None:
+    if not team_a or not team_b:
         print("Одна из команд не найдена.")
         return
-
     if team_a == team_b:
         print("Нельзя провести матч между одной и той же командой.")
         return
 
     match = Match(team_a, team_b)
-    print(f"\nМатч {match.team_a.name} vs {match.team_b.name} начался!")
+    print(f"\nМатч {team_a.name} vs {team_b.name} начался!")
 
     while True:
-        goal = input("\nВведите имя игрока, забившего гол (или 'stop' для завершения): ").strip()
-        if goal.lower() == "stop":
+        goal = input("\nВведите имя игрока, забившего гол (или 'стоп' для завершения): ").strip()
+        if goal.lower() == "стоп":
             break
 
         try:
@@ -190,8 +196,9 @@ def record_match():
             print("Введите число для минуты.")
             continue
 
+        # --- Поиск игрока ---
         found_player = None
-        for team in [match.team_a, match.team_b]:
+        for team in [team_a, team_b]:
             for p in team.players:
                 if p.name.lower() == goal.lower():
                     found_player = p
@@ -203,34 +210,25 @@ def record_match():
             print("Игрок не найден в обеих командах.")
             continue
 
-        try:
-            match.record_goal(found_player, minute)
-            print(f"Гол! {found_player.name} на {minute}-й минуте.")
-        except Exception as e:
-            print("Ошибка записи гола:", e)
+        match.record_goal(found_player, minute)
+        print(f"⚽ Гол! {found_player.name} ({found_player.role()}) на {minute}-й минуте!")
 
     print("\n" + match.summary())
     winner = match.winner()
-    if winner:
-        print(f"Победитель: {winner.name}")
-    else:
-        print("Ничья")
+    print(f"🏆 Победитель: {winner.name if winner else 'Ничья'}")
+
     match.finalize_match()
-    if not hasattr(match.team_a, "matches"):
-        match.team_a.matches = []
-    if not hasattr(match.team_b, "matches"):
-        match.team_b.matches = []
-    match.team_a.matches.append(match)
-    match.team_b.matches.append(match)
-    
+    match.team_a.matches = getattr(match.team_a, "matches", []) + [match]
+    match.team_b.matches = getattr(match.team_b, "matches", []) + [match]
+
     save_match(match)
-    
     save_team(match.team_a)
     save_team(match.team_b)
     save_state()
 
-# === Отчёты и база данных ===
+
 def save_report():
+    """Создание .docx отчёта о команде."""
     if not teams:
         print("Нет созданных команд.")
         return
@@ -248,23 +246,53 @@ def save_report():
     filename = f"report_{team.name.replace(' ', '_')}.docx"
     try:
         save_team_report_docx(team, filename)
-        print(f"Отчёт сохранён: {filename}")
+        print(f"📄 Отчёт сохранён: {filename}")
     except Exception as e:
         print("Ошибка при сохранении отчёта:", e)
 
 
 def save_all_to_db():
+    """Сохранение всех данных в базу."""
     if not teams:
-        print("Нет данных для сохранения.")
+        print("Нет созданных команд.")
         return
 
     try:
         init_db()
         for team in teams.values():
             save_team(team)
-        print("Все данные успешно сохранены в базу данных.")
+        print("Все данные сохранены в базу данных.")
     except Exception as e:
-        print("Ошибка при сохранении в базу данных:", e)
+        print("Ошибка при сохранении:", e)
+ 
+def clear_state():
+    """Полностью очищает сохранённые данные (файл teams.pkl и базу данных)."""
+    global teams
+    teams = {}
+    if os.path.exists(SAVE_FILE):
+        os.remove(SAVE_FILE)
+        print("Файл состояния teams.pkl удалён.")
+    if os.path.exists("sports.db"):
+        os.remove("sports.db")
+        print("База данных sports.db удалена.")
+    init_db()
+    print("Всё очищено, можно начать заново!")
+ 
+def open_database():
+    """Открывает базу данных sports.db в системном приложении."""
+    db_path = os.path.abspath("sports.db")
+    if not os.path.exists(db_path):
+        print("База данных не найдена. Сначала сохраните данные (пункт 6).")
+        return
+
+    try:
+        system = platform.system()
+        os.startfile(db_path)
+        print(f"Открыта база данных: {db_path}")
+
+    except Exception as e:
+        print(f"Ошибка при открытии базы данных: {e}")
+
 
 
 # === Главное меню ===
@@ -278,6 +306,8 @@ def menu():
         print("5. Сохранить отчёт (.docx)")
         print("6. Сохранить всё в базу данных")
         print("7. Показать все команды")
+        print("8. Очистить все данные о командах")
+        print("9. Открыть базу данных")
         print("0. Выход")
 
         choice = input("Выберите пункт меню: ").strip()
@@ -296,6 +326,10 @@ def menu():
             save_all_to_db()
         elif choice == "7":
             list_all_teams()
+        elif choice == "8":
+            clear_state()
+        elif choice == "9":
+            open_database()
         elif choice == "0":
             save_state()
             print("Выход из программы.")

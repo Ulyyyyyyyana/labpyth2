@@ -57,6 +57,7 @@ class Player(ABC):
         self._games += 1
         self._goals += goals
         self._assists += assists
+  
 
     def to_dict(self) -> Dict[str, str]:
         """Преобразовать объект игрока в словарь."""

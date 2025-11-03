@@ -46,7 +46,11 @@ class Team:
     def total_assists(self) -> int:
         """Общее количество передач у всех игроков."""
         return sum(p.assists for p in self.players)
-
+    def top_scorer(self):
+        """Возвращает игрока с наибольшим количеством голов."""
+        if not self.players:
+            return None
+        return max(self.players, key=lambda p: p.goals)
     def total_games(self) -> int:
         """Общее количество матчей у всех игроков."""
         return sum(p.games for p in self.players)
@@ -68,36 +72,27 @@ class Team:
     
     def match_stats(self):
         """Возвращает статистику по матчам: всего, побед, поражений, ничьих."""
-        total = 0
-        wins = 0
-        losses = 0
-        draws = 0
+        stats = {"Матчи": 0, "Победы": 0, "Поражения": 0, "Ничьи": 0}
 
-        # если команда хранит свои матчи (можно доработать в будущем)
-        if hasattr(self, "matches"):
-            for match in self.matches:
-                total += 1
-                goals_a, goals_b = match.score()
-                if match.team_a == self:
-                    if goals_a > goals_b:
-                        wins += 1
-                    elif goals_a < goals_b:
-                        losses += 1
-                    else:
-                        draws += 1
-                elif match.team_b == self:
-                    if goals_b > goals_a:
-                        wins += 1
-                    elif goals_b < goals_a:
-                        losses += 1
-                    else:
-                        draws += 1
+        matches = getattr(self, "matches", [])
+        for match in matches:
+            stats["Матчи"] += 1
+            goals_a, goals_b = match.score()
 
-        return {
-            "Матчи": total,
-            "Победы": wins,
-            "Поражения": losses,
-            "Ничьи": draws
-        }
+            # Определяем, сколько забила текущая команда и соперник
+            if match.team_a == self:
+                team_goals, opponent_goals = goals_a, goals_b
+            elif match.team_b == self:
+                team_goals, opponent_goals = goals_b, goals_a
+            else:
+                continue  # на случай, если матч не связан с этой командой
 
+            # Обновляем статистику в одну строку
+            if team_goals > opponent_goals:
+                stats["Победы"] += 1
+            elif team_goals < opponent_goals:
+                stats["Поражения"] += 1
+            else:
+                stats["Ничьи"] += 1
 
+        return stats
