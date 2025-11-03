@@ -1,7 +1,7 @@
 ﻿import sys
 import os
 import pickle
-from sports_team.player import Player
+from sports_team.player import Forward, Defender, Goalkeeper
 from sports_team.team import Team
 from sports_team.match import Match
 from sports_team.report import save_team_report_docx
@@ -11,7 +11,7 @@ SAVE_FILE = "teams.pkl"
 
 teams = {}
 
-
+init_db()
 # === Сохранение и загрузка состояния ===
 def save_state():
     try:
@@ -83,20 +83,31 @@ def add_player_to_team():
         print("Неверный номер. Введите целое число.")
         return
 
-    position = input("Позиция игрока: ").strip()
+    position = input("Позиция (Нападающий / Защитник / Вратарь): ").strip().lower()
     if not position:
         print("Позиция не может быть пустой.")
         return
 
+    # Проверяем дублирование
     for existing_player in team.players:
         if existing_player.number == number:
             print(f"Игрок с номером {number} уже существует в команде.")
             return
 
-    player = Player(player_name, number, position)
+    # === Создаём игрока нужного подкласса ===
+    if "напад" in position:
+        player = Forward(player_name, number, "Нападающий")
+    elif "защит" in position:
+        player = Defender(player_name, number, "Защитник")
+    elif "врат" in position:
+        player = Goalkeeper(player_name, number, "Вратарь")
+    else:
+        print("Неизвестная позиция. Используйте: Нападающий, Защитник или Вратарь.")
+        return
+
     team.add_player(player)
     save_state()
-    print(f"Игрок {player_name} добавлен в команду {team.name}.")
+    print(f"Игрок {player_name} ({player.role()}) добавлен в команду {team.name}.")
 
 
 def show_team_info():
@@ -124,7 +135,8 @@ def show_team_info():
     if team.players:
         print("Состав команды:")
         for p in team.players:
-            print(f" - {p.name} (№{p.number}, {p.position}) — Голы: {p.goals}, Передачи: {p.assists}, Матчи: {p.games}")
+            print(f" - {p.name} (№{p.number}, {p.role()}) — "
+                  f"Голы: {p.goals}, Передачи: {p.assists}, Матчи: {p.games}")
     else:
         print("В команде нет игроков.")
     print()
@@ -203,10 +215,19 @@ def record_match():
         print(f"Победитель: {winner.name}")
     else:
         print("Ничья")
-
+    match.finalize_match()
+    if not hasattr(match.team_a, "matches"):
+        match.team_a.matches = []
+    if not hasattr(match.team_b, "matches"):
+        match.team_b.matches = []
+    match.team_a.matches.append(match)
+    match.team_b.matches.append(match)
+    
     save_match(match)
+    
+    save_team(match.team_a)
+    save_team(match.team_b)
     save_state()
-
 
 # === Отчёты и база данных ===
 def save_report():

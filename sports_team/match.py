@@ -6,6 +6,7 @@ from sports_team.player import Player
 
 class Match:
     """Класс, описывающий футбольный матч между двумя командами."""
+    
 
     def __init__(self, team_a: Team, team_b: Team, date: datetime = None):
         if team_a == team_b:
@@ -23,7 +24,12 @@ class Match:
         # добавляем гол игроку
         player.add_match_stats(goals=1)
         # определяем, к какой команде принадлежит
-        team_name = "A" if player in self.team_a.players else "B"
+        if any(p is player for p in self.team_a.players):
+            team_name = "A"
+        elif any(p is player for p in self.team_b.players):
+            team_name = "B"
+        else:
+            raise ValueError("Игрок не найден ни в одной из команд.")
         self.events.append({
             "minute": minute,
             "player": player,
@@ -50,6 +56,16 @@ class Match:
         """Краткая текстовая сводка."""
         goals_a, goals_b = self.score()
         return f"{self.team_a.name} {goals_a}:{goals_b} {self.team_b.name}"
+    def finalize_match(self):
+        """Обновить статистику участников после матча (добавить сыгранный матч)."""
+        players_in_match = set()
+        for event in self.events:
+            players_in_match.add(event["player"])
+        for player in players_in_match:
+            # если игрок забивал — add_match_stats уже добавил матч
+            # если нет — добавляем матч без голов
+            if player.games == 0 or player not in [e["player"] for e in self.events]:
+                player.add_match_stats(goals=0, assists=0)
 
     # --- dunder-методы ---
     def __str__(self):
@@ -57,3 +73,4 @@ class Match:
 
     def __repr__(self):
         return f"Match({self.team_a.name!r}, {self.team_b.name!r}, {len(self.events)} событий)"
+    

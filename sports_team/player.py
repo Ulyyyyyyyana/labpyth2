@@ -1,10 +1,11 @@
 ﻿# sports_team/player.py
-from abc import ABC
+from abc import ABC, abstractmethod
 from typing import Dict
+from sports_team.utils import validate_non_negative
 
 
 class Player(ABC):
-    """Класс, описывающий игрока спортивной команды."""
+    """Абстрактный базовый класс, описывающий игрока спортивной команды."""
 
     def __init__(self, name: str, number: int, position: str):
         self.name = name
@@ -21,8 +22,7 @@ class Player(ABC):
 
     @games.setter
     def games(self, value: int):
-        if value < 0:
-            raise ValueError("Количество игр не может быть отрицательным")
+        validate_non_negative(value, "Количество игр")
         self._games = value
 
     @property
@@ -31,8 +31,7 @@ class Player(ABC):
 
     @goals.setter
     def goals(self, value: int):
-        if value < 0:
-            raise ValueError("Количество голов не может быть отрицательным")
+        validate_non_negative(value, "Количество голов")
         self._goals = value
 
     @property
@@ -41,9 +40,14 @@ class Player(ABC):
 
     @assists.setter
     def assists(self, value: int):
-        if value < 0:
-            raise ValueError("Количество передач не может быть отрицательным")
+        validate_non_negative(value, "Количество передач")
         self._assists = value
+
+    # --- абстрактный метод ---
+    @abstractmethod
+    def role(self) -> str:
+        """Абстрактный метод, возвращающий роль игрока (наследники обязаны реализовать)."""
+        pass
 
     # --- методы работы со статистикой ---
     def add_match_stats(self, goals: int = 0, assists: int = 0):
@@ -53,12 +57,6 @@ class Player(ABC):
         self._games += 1
         self._goals += goals
         self._assists += assists
-
-    def average_goals_per_game(self) -> float:
-        """Среднее количество голов за игру."""
-        if self._games == 0:
-            return 0.0
-        return round(self._goals / self._games, 2)
 
     def to_dict(self) -> Dict[str, str]:
         """Преобразовать объект игрока в словарь."""
@@ -76,7 +74,7 @@ class Player(ABC):
         return f"{self.name} (№{self.number}, {self.position})"
 
     def __repr__(self) -> str:
-        return f"Player(name='{self.name}', number={self.number}, position='{self.position}')"
+        return f"{self.__class__.__name__}(name='{self.name}', number={self.number}, position='{self.position}')"
 
     def __eq__(self, other):
         if not isinstance(other, Player):
@@ -88,3 +86,32 @@ class Player(ABC):
         if not isinstance(other, Player):
             return NotImplemented
         return self._goals < other._goals
+
+    def __hash__(self):
+        """Позволяет использовать объекты Player в множествах и как ключи словарей."""
+        return hash((self.name, self.number))
+
+
+# --- конкретные подклассы игроков ---
+class Forward(Player):
+    def __init__(self, name, number, position="Нападающий"):
+        super().__init__(name, number, position)
+
+    def role(self) -> str:
+        return "Нападающий"
+
+
+class Defender(Player):
+    def __init__(self, name, number, position="Защитник"):
+        super().__init__(name, number, position)
+
+    def role(self) -> str:
+        return "Защитник"
+
+
+class Goalkeeper(Player):
+    def __init__(self, name, number, position="Вратарь"):
+        super().__init__(name, number, position)
+
+    def role(self) -> str:
+        return "Вратарь"
