@@ -1,4 +1,4 @@
-﻿# Sports Team Stats 🏆
+﻿# Sports Team Stats 
 
 **Технологии**  
 - Python 3.9+
